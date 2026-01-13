@@ -109,7 +109,7 @@ def validate_folder_structure(project_path):
     except Exception as e:
         return False, f"❌ Error al validar la ruta: {str(e)}"
 
-def process_camera_trap_data(project_path):
+def process_camera_trap_data(project_path, progress_bar=None, status_text=None):
     """Procesa todas las imágenes en la estructura de carpetas y genera el DataFrame."""
     project_path = Path(project_path)
     data = []
@@ -117,38 +117,63 @@ def process_camera_trap_data(project_path):
     # Extensiones de imagen permitidas
     image_extensions = {'.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'}
     
-    # Recorrer la estructura: PROYECTO/SITIO/CAMARA/ESPECIE/FOTOS
+    # Contar total de archivos primero para la barra de progreso
+    total_files = 0
+    all_files = []
+    
     for sitio_dir in project_path.iterdir():
         if not sitio_dir.is_dir():
             continue
-        
-        sitio_nombre = sitio_dir.name
-        
         for camara_dir in sitio_dir.iterdir():
             if not camara_dir.is_dir():
                 continue
-            
-            camara_nombre = camara_dir.name
-            
             for especie_dir in camara_dir.iterdir():
                 if not especie_dir.is_dir():
                     continue
-                
-                especie_nombre = especie_dir.name
-                
-                # Procesar todas las imágenes en esta carpeta
                 for foto_path in especie_dir.iterdir():
                     if foto_path.is_file() and foto_path.suffix in image_extensions:
-                        fecha, hora = extract_exif_datetime(foto_path)
-                        
-                        if fecha and hora:
-                            data.append({
-                                'SITIO': sitio_nombre,
-                                'CAMARA': camara_nombre,
-                                'ESPECIE': especie_nombre,
-                                'FECHA': fecha,
-                                'HORA': hora
-                            })
+                        all_files.append((foto_path, sitio_dir.name, camara_dir.name, especie_dir.name))
+                        total_files += 1
+    
+    if status_text:
+        status_text.text(f"📊 Total de fotos encontradas: {total_files:,}")
+    
+    # Procesar archivos con barra de progreso
+    processed = 0
+    errors = 0
+    
+    for foto_path, sitio_nombre, camara_nombre, especie_nombre in all_files:
+        try:
+            fecha, hora = extract_exif_datetime(foto_path)
+            
+            if fecha and hora:
+                data.append({
+                    'SITIO': sitio_nombre,
+                    'CAMARA': camara_nombre,
+                    'ESPECIE': especie_nombre,
+                    'FECHA': fecha,
+                    'HORA': hora
+                })
+        except Exception as e:
+            errors += 1
+            # Continuar con la siguiente foto si hay error
+            pass
+        
+        processed += 1
+        
+        # Actualizar progreso cada 100 fotos para no saturar la UI
+        if progress_bar and processed % 100 == 0:
+            progress_bar.progress(processed / total_files)
+            if status_text:
+                status_text.text(f"Procesando: {processed:,} / {total_files:,} fotos ({(processed/total_files)*100:.1f}%)")
+    
+    # Actualizar al 100%
+    if progress_bar:
+        progress_bar.progress(1.0)
+    if status_text:
+        status_text.text(f"✅ Completado: {processed:,} fotos procesadas, {len(data):,} con metadatos válidos")
+        if errors > 0:
+            status_text.text(f"⚠️ {errors} fotos con errores fueron omitidas")
     
     return pd.DataFrame(data)
 
@@ -221,6 +246,28 @@ if project_path:
     project_path = project_path.strip().strip('"').strip("'")
 
 if project_path:
+    # Panel de depuración (temporal)
+    with st.expander("🔧 Información de Depuración", expanded=False):
+        st.code(f"Ruta ingresada: {repr(project_path)}")
+        st.code(f"Tipo: {type(project_path)}")
+        st.code(f"Longitud: {len(project_path)}")
+        
+        import os
+        test_path = Path(project_path.strip())
+        st.code(f"Path object: {test_path}")
+        st.code(f"Path.exists(): {test_path.exists()}")
+        st.code(f"Path.is_dir(): {test_path.is_dir()}")
+        st.code(f"os.path.exists(): {os.path.exists(str(test_path))}")
+        
+        # Intentar listar D:\
+        try:
+            d_contents = list(Path("D:\\").iterdir())
+            st.write(f"Contenido de D:\\ ({len(d_contents)} elementos):")
+            for item in d_contents[:10]:  # Mostrar solo los primeros 10
+                st.write(f"  - {item.name}")
+        except Exception as e:
+            st.error(f"Error al listar D:\\: {e}")
+    
     # Validar estructura
     is_valid, message = validate_folder_structure(project_path)
     
@@ -229,48 +276,52 @@ if project_path:
         
         # Botón para procesar
         if st.button("🚀 Procesar Datos y Generar Excel", type="primary"):
-            with st.spinner("Procesando imágenes y extrayendo metadatos..."):
-                df = process_camera_trap_data(project_path)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            status_text.text("🔍 Escaneando carpetas y contando archivos...")
+            
+            df = process_camera_trap_data(project_path, progress_bar, status_text)
+            
+            if len(df) > 0:
+                st.markdown('<div class="success-box">', unsafe_allow_html=True)
+                st.markdown(f"### ✅ Procesamiento Completado")
+                st.markdown(f"Se procesaron **{len(df)} fotografías** exitosamente.")
+                st.markdown('</div>', unsafe_allow_html=True)
                 
-                if len(df) > 0:
-                    st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                    st.markdown(f"### ✅ Procesamiento Completado")
-                    st.markdown(f"Se procesaron **{len(df)} fotografías** exitosamente.")
-                    st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    # Mostrar vista previa
-                    st.markdown("### 📊 Vista Previa de los Datos")
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # Estadísticas
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Total de Sitios", df['SITIO'].nunique())
-                    with col2:
-                        st.metric("Total de Cámaras", df['CAMARA'].nunique())
-                    with col3:
-                        st.metric("Total de Especies/Categorías", df['ESPECIE'].nunique())
-                    
-                    # Generar archivo Excel
-                    output_filename = f"datos_camaras_trampa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    output_path = Path(project_path) / output_filename
-                    
-                    df.to_excel(output_path, index=False, engine='openpyxl')
-                    
-                    st.success(f"📁 Archivo Excel generado: `{output_filename}`")
-                    st.info(f"📍 Ubicación: `{output_path}`")
-                    
-                    # Botón de descarga
-                    with open(output_path, 'rb') as f:
-                        st.download_button(
-                            label="⬇️ Descargar Excel",
-                            data=f,
-                            file_name=output_filename,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
-                else:
-                    st.error("❌ No se encontraron imágenes con metadatos EXIF válidos en la estructura de carpetas.")
-                    st.warning("Verifica que las imágenes tengan metadatos de fecha de captura y que la estructura de carpetas sea correcta.")
+                # Mostrar vista previa
+                st.markdown("### 📊 Vista Previa de los Datos")
+                st.dataframe(df, use_container_width=True)
+                
+                # Estadísticas
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total de Sitios", df['SITIO'].nunique())
+                with col2:
+                    st.metric("Total de Cámaras", df['CAMARA'].nunique())
+                with col3:
+                    st.metric("Total de Especies/Categorías", df['ESPECIE'].nunique())
+                
+                # Generar archivo Excel
+                output_filename = f"datos_camaras_trampa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                output_path = Path(project_path) / output_filename
+                
+                df.to_excel(output_path, index=False, engine='openpyxl')
+                
+                st.success(f"📁 Archivo Excel generado: `{output_filename}`")
+                st.info(f"📍 Ubicación: `{output_path}`")
+                
+                # Botón de descarga
+                with open(output_path, 'rb') as f:
+                    st.download_button(
+                        label="⬇️ Descargar Excel",
+                        data=f,
+                        file_name=output_filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+            else:
+                st.error("❌ No se encontraron imágenes con metadatos EXIF válidos en la estructura de carpetas.")
+                st.warning("Verifica que las imágenes tengan metadatos de fecha de captura y que la estructura de carpetas sea correcta.")
     else:
         st.error(f"❌ {message}")
         st.info("Por favor, verifica que la ruta sea correcta y que la estructura de carpetas siga el formato requerido.")
