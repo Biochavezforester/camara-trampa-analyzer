@@ -88,20 +88,26 @@ def extract_exif_datetime(image_path):
 
 def validate_folder_structure(project_path):
     """Valida que la estructura de carpetas sea correcta."""
-    project_path = Path(project_path)
-    
-    if not project_path.exists():
-        return False, "La carpeta del proyecto no existe."
-    
-    if not project_path.is_dir():
-        return False, "La ruta seleccionada no es una carpeta."
-    
-    # Verificar que existan subcarpetas (sitios)
-    sitios = [d for d in project_path.iterdir() if d.is_dir()]
-    if not sitios:
-        return False, "No se encontraron carpetas de sitios en el proyecto."
-    
-    return True, f"Estructura válida. Se encontraron {len(sitios)} sitio(s)."
+    try:
+        # Normalizar la ruta (eliminar espacios, convertir barras)
+        project_path = Path(project_path.strip())
+        
+        if not project_path.exists():
+            return False, f"❌ La carpeta no existe: `{project_path}`\n\n**Sugerencias:**\n- Verifica que el disco externo esté conectado\n- Comprueba la letra de unidad (D:, E:, F:, etc.)\n- Asegúrate de copiar la ruta completa desde el Explorador de Archivos"
+        
+        if not project_path.is_dir():
+            return False, f"❌ La ruta no es una carpeta: `{project_path}`"
+        
+        # Verificar que existan subcarpetas (sitios)
+        sitios = [d for d in project_path.iterdir() if d.is_dir()]
+        if not sitios:
+            return False, f"❌ No se encontraron carpetas de sitios en: `{project_path}`\n\n**La carpeta existe pero está vacía o no tiene la estructura correcta.**\nVerifica que contenga subcarpetas para cada sitio."
+        
+        return True, f"✅ Estructura válida. Se encontraron {len(sitios)} sitio(s)."
+    except PermissionError:
+        return False, f"❌ No tienes permisos para acceder a: `{project_path}`\n\nIntenta ejecutar la aplicación como administrador."
+    except Exception as e:
+        return False, f"❌ Error al validar la ruta: {str(e)}"
 
 def process_camera_trap_data(project_path):
     """Procesa todas las imágenes en la estructura de carpetas y genera el DataFrame."""
@@ -207,8 +213,12 @@ st.markdown('<p class="section-header">🔍 Seleccionar Proyecto</p>', unsafe_al
 project_path = st.text_input(
     "Ingresa la ruta completa de la carpeta del proyecto:",
     placeholder="Ejemplo: C:\\Users\\Usuario\\Documents\\MiProyectoCamaras",
-    help="Pega aquí la ruta completa de la carpeta que contiene tus sitios"
+    help="Pega aquí la ruta completa de la carpeta que contiene tus sitios (sin comillas)"
 )
+
+# Limpiar comillas si el usuario las pegó accidentalmente
+if project_path:
+    project_path = project_path.strip().strip('"').strip("'")
 
 if project_path:
     # Validar estructura
