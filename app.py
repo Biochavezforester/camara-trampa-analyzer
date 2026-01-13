@@ -111,16 +111,18 @@ def validate_folder_structure(project_path):
 
 def process_camera_trap_data(project_path, progress_bar=None, status_text=None):
     """Procesa todas las imágenes en la estructura de carpetas y genera el DataFrame."""
+    import time
     project_path = Path(project_path)
     data = []
     
     # Extensiones de imagen permitidas
     image_extensions = {'.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'}
     
-    # Contar total de archivos primero para la barra de progreso
-    total_files = 0
-    all_files = []
+    # FASE 1: Escaneo rápido - solo contar archivos
+    if status_text:
+        status_text.text("🔍 Fase 1/2: Escaneando estructura de carpetas...")
     
+    all_files = []
     for sitio_dir in project_path.iterdir():
         if not sitio_dir.is_dir():
             continue
@@ -133,14 +135,22 @@ def process_camera_trap_data(project_path, progress_bar=None, status_text=None):
                 for foto_path in especie_dir.iterdir():
                     if foto_path.is_file() and foto_path.suffix in image_extensions:
                         all_files.append((foto_path, sitio_dir.name, camara_dir.name, especie_dir.name))
-                        total_files += 1
+    
+    total_files = len(all_files)
+    
+    if total_files == 0:
+        if status_text:
+            status_text.text("❌ No se encontraron archivos de imagen")
+        return pd.DataFrame()
     
     if status_text:
-        status_text.text(f"📊 Total de fotos encontradas: {total_files:,}")
+        status_text.text(f"📊 Encontradas {total_files:,} fotos. Iniciando procesamiento...")
     
-    # Procesar archivos con barra de progreso
+    # FASE 2: Procesamiento con progreso
     processed = 0
     errors = 0
+    skipped_no_exif = 0
+    start_time = time.time()
     
     for foto_path, sitio_nombre, camara_nombre, especie_nombre in all_files:
         try:
@@ -154,26 +164,50 @@ def process_camera_trap_data(project_path, progress_bar=None, status_text=None):
                     'FECHA': fecha,
                     'HORA': hora
                 })
+            else:
+                skipped_no_exif += 1
         except Exception as e:
             errors += 1
-            # Continuar con la siguiente foto si hay error
-            pass
         
         processed += 1
         
-        # Actualizar progreso cada 100 fotos para no saturar la UI
-        if progress_bar and processed % 100 == 0:
-            progress_bar.progress(processed / total_files)
-            if status_text:
-                status_text.text(f"Procesando: {processed:,} / {total_files:,} fotos ({(processed/total_files)*100:.1f}%)")
+        # Actualizar progreso cada 50 fotos (más frecuente para mejor feedback)
+        if progress_bar and processed % 50 == 0:
+            progress = processed / total_files
+            progress_bar.progress(progress)
+            
+            # Calcular tiempo estimado
+            elapsed = time.time() - start_time
+            if processed > 0:
+                avg_time_per_photo = elapsed / processed
+                remaining = total_files - processed
+                eta_seconds = avg_time_per_photo * remaining
+                eta_minutes = int(eta_seconds / 60)
+                eta_seconds_remainder = int(eta_seconds % 60)
+                
+                if status_text:
+                    status_text.text(
+                        f"⚡ Procesando: {processed:,} / {total_files:,} ({progress*100:.1f}%) | "
+                        f"Válidas: {len(data):,} | "
+                        f"Tiempo restante: ~{eta_minutes}m {eta_seconds_remainder}s"
+                    )
     
     # Actualizar al 100%
     if progress_bar:
         progress_bar.progress(1.0)
+    
+    elapsed_total = time.time() - start_time
+    minutes = int(elapsed_total / 60)
+    seconds = int(elapsed_total % 60)
+    
     if status_text:
-        status_text.text(f"✅ Completado: {processed:,} fotos procesadas, {len(data):,} con metadatos válidos")
-        if errors > 0:
-            status_text.text(f"⚠️ {errors} fotos con errores fueron omitidas")
+        status_text.text(
+            f"✅ Completado en {minutes}m {seconds}s | "
+            f"Procesadas: {processed:,} | "
+            f"Con metadatos: {len(data):,} | "
+            f"Sin EXIF: {skipped_no_exif:,} | "
+            f"Errores: {errors:,}"
+        )
     
     return pd.DataFrame(data)
 
@@ -246,28 +280,6 @@ if project_path:
     project_path = project_path.strip().strip('"').strip("'")
 
 if project_path:
-    # Panel de depuración (temporal)
-    with st.expander("🔧 Información de Depuración", expanded=False):
-        st.code(f"Ruta ingresada: {repr(project_path)}")
-        st.code(f"Tipo: {type(project_path)}")
-        st.code(f"Longitud: {len(project_path)}")
-        
-        import os
-        test_path = Path(project_path.strip())
-        st.code(f"Path object: {test_path}")
-        st.code(f"Path.exists(): {test_path.exists()}")
-        st.code(f"Path.is_dir(): {test_path.is_dir()}")
-        st.code(f"os.path.exists(): {os.path.exists(str(test_path))}")
-        
-        # Intentar listar D:\
-        try:
-            d_contents = list(Path("D:\\").iterdir())
-            st.write(f"Contenido de D:\\ ({len(d_contents)} elementos):")
-            for item in d_contents[:10]:  # Mostrar solo los primeros 10
-                st.write(f"  - {item.name}")
-        except Exception as e:
-            st.error(f"Error al listar D:\\: {e}")
-    
     # Validar estructura
     is_valid, message = validate_folder_structure(project_path)
     
