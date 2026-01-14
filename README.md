@@ -1,211 +1,340 @@
-# 📷 Plataforma Profesional de Análisis de Datos de Cámaras Trampa
+# 📷 Plataforma Profesional de Análisis de Datos de Cámaras Trampa con IA
 
-**Desarrollado por: Biólogo Erick Elio Chavez Gurrola**
+## Versión 2.0 - Con Clasificación Automática y Análisis Avanzado
 
-## 📋 Descripción
+**Desarrollado por:** Biólogo Erick Elio Chavez Gurrola
 
-Plataforma local diseñada para facilitar el análisis de datos de cámaras trampa. Extrae automáticamente la información de fecha y hora de captura de fotografías y organiza los datos en un formato estructurado para análisis posterior.
+---
 
-### ✨ Características Principales
+## 🎯 Características Principales
 
-- ✅ **Extracción automática de metadatos EXIF** - Lee la fecha de captura original de las fotografías
-- ✅ **Generación de reportes Excel** - Crea archivos `.xlsx` con columnas organizadas
-- ✅ **Funcionamiento 100% offline** - No requiere conexión a internet
-- ✅ **Procesamiento selectivo** - Solo procesa fotografías, ignora videos automáticamente
-- ✅ **Interfaz profesional** - Diseño intuitivo y fácil de usar
-- ✅ **Validación de estructura** - Verifica que las carpetas estén organizadas correctamente
+### ✨ Funcionalidades Core
 
-## 🔗 Complemento de FORXIME/2
+- ✅ **Extracción automática de metadatos EXIF** (fecha, hora, modelo de cámara, temperatura)
+- ✅ **Clasificación con IA** (si GPU NVIDIA RTX disponible) o modo asistido manual
+- ✅ **Cálculo de esfuerzo de muestreo** (trampas-día por cámara)
+- ✅ **Detección de eventos independientes** con criterio temporal configurable
+- ✅ **Análisis temporal completo** (diurno, nocturno, crepuscular, horas pico)
+- ✅ **Índice de Abundancia Relativa (RAI)** por especie
+- ✅ **Gestión de coordenadas UTM** con validación para zonas de México
+- ✅ **Exportación dual de Excel**: Básico (FORXIME/2) + Completo (análisis)
+- ✅ **Validación de calidad de datos** con scoring automático
+- ✅ **Base de datos local** (SQLite) para historial de proyectos
+- ✅ **100% offline** (después de instalación inicial)
 
-Esta plataforma es un **complemento perfecto** para [FORXIME/2](https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/), una herramienta especializada en análisis estadístico avanzado de datos de fauna silvestre.
+### 🤖 Sistema de IA (Opcional - Requiere GPU)
 
-**Flujo de trabajo recomendado:**
+- **Detección automática de GPU CUDA**
+- **Modo dual**: IA automática (GPU) o asistido manual (CPU)
+- **Clasificación de especies** optimizada para fauna mexicana
+- **Niveles de confianza** en predicciones
+- **Validación obligatoria** de predicciones por el usuario
 
-1. Usa esta plataforma para organizar y extraer datos de tus cámaras trampa
-2. Genera el archivo Excel con los datos estructurados
-3. Importa el Excel en FORXIME/2 para análisis estadístico avanzado
+### 📊 Análisis Avanzado
+
+- Cálculo de trampas-día por cámara y sitio
+- Eventos independientes con RAI
+- Patrones temporales (24 horas)
+- Frecuencia de visitas por especie
+- Detección de períodos sin capturas (gaps)
+- Reporte de calidad de datos
+
+### 📍 Coordenadas UTM
+
+- Soporte para zonas UTM de México (11Q-16P)
+- Validación de rangos para territorio mexicano
+- Datum WGS84 por defecto
+- Almacenamiento en base de datos para reutilización
+- Exportación a Excel con coordenadas
+
+---
+
+## 🚀 Instalación
+
+### Requisitos Mínimos
+
+- **Python:** 3.8 o superior
+- **RAM:** 4 GB
+- **Espacio en disco:** 2 GB
+
+### Requisitos Recomendados (para IA)
+
+- **GPU:** NVIDIA RTX 3060+ (6GB VRAM)
+- **CUDA:** 11.8 o superior
+- **RAM:** 16 GB
+- **Espacio en disco:** 10 GB (modelos de IA)
+
+### Pasos de Instalación
+
+1. **Clonar o descargar el repositorio**
+
+```bash
+git clone https://github.com/tu-usuario/camara-trampa-analyzer.git
+cd camara-trampa-analyzer
+```
+
+1. **Crear entorno virtual** (recomendado)
+
+```bash
+python -m venv venv
+```
+
+1. **Activar entorno virtual**
+
+- Windows:
+
+```bash
+venv\Scripts\activate
+```
+
+- Linux/Mac:
+
+```bash
+source venv/bin/activate
+```
+
+1. **Instalar dependencias**
+
+**Sin GPU (modo manual):**
+
+```bash
+pip install streamlit pandas openpyxl Pillow numpy scipy scikit-learn opencv-python tqdm requests matplotlib plotly
+```
+
+**Con GPU NVIDIA (modo IA):**
+
+```bash
+# Primero instalar PyTorch con CUDA
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+
+# Luego el resto de dependencias
+pip install -r requirements.txt
+```
+
+1. **Ejecutar la aplicación**
+
+```bash
+streamlit run app.py
+```
+
+---
 
 ## 📁 Estructura de Carpetas Requerida
 
-Para que la plataforma funcione correctamente, organiza tus carpetas de la siguiente manera:
-
 ```
-NOMBRE_DEL_PROYECTO/
+PROYECTO/
 ├── SITIO_1/
 │   ├── CAMARA_1/
-│   │   ├── ESPECIE_A/
-│   │   │   ├── foto001.jpg
-│   │   │   ├── foto002.jpg
+│   │   ├── VENADO_COLA_BLANCA/
+│   │   │   ├── IMG_0001.JPG
+│   │   │   ├── IMG_0002.JPG
 │   │   │   └── ...
-│   │   ├── HUMANO/
-│   │   │   └── foto003.jpg
+│   │   ├── PECARI_DE_COLLAR/
+│   │   │   └── ...
 │   │   └── VACIO/
-│   │       └── foto004.jpg
-│   ├── CAMARA_2/
-│   │   └── ...
-│   └── CAMARA_3/
+│   │       └── ...
+│   └── CAMARA_2/
 │       └── ...
 └── SITIO_2/
     └── ...
 ```
 
-### 📝 Reglas Importantes
+### Reglas Importantes
 
-- Cada **sitio** puede tener hasta **3 cámaras**
-- Las categorías de observación pueden ser: especies, **HUMANO**, **VACIO**, **GANADO**, etc.
-- Solo se procesarán archivos de imagen: **JPG**, **JPEG**, **PNG**
-- Los **videos serán ignorados** automáticamente
-- Las fotografías deben tener metadatos EXIF de fecha de captura
+- ✅ Jerarquía: **Proyecto > Sitio > Cámara > Especie > Fotos**
+- ✅ Formatos soportados: **JPG, JPEG, PNG** (mayúsculas o minúsculas)
+- ✅ Videos se ignoran automáticamente
+- ✅ Máximo 10 cámaras por sitio
+- ✅ Nombres de especies en MAYÚSCULAS recomendado
 
-## 🚀 Instalación Local (Sin Internet)
+---
 
-### Requisitos Previos
+## 🎮 Uso de la Plataforma
 
-- **Python 3.8 o superior** instalado en tu computadora
-- **Conexión a internet** (solo para la instalación inicial)
+### 1. Procesamiento Inicial
 
-### Paso 1: Instalar Python
+1. Abrir la aplicación
+2. Ir a tab "📁 Procesamiento"
+3. Ingresar ruta del proyecto
+4. Click en "🚀 Procesar Proyecto"
+5. Esperar a que termine el procesamiento
 
-Si no tienes Python instalado:
+### 2. Ingreso de Coordenadas UTM
 
-1. Descarga Python desde [python.org](https://www.python.org/downloads/)
-2. Durante la instalación, **marca la casilla** "Add Python to PATH"
-3. Completa la instalación
+1. Ir a tab "📍 Coordenadas UTM"
+2. Para cada cámara, ingresar:
+   - Zona UTM (ej: 13Q, 14R)
+   - Este (Easting) en metros
+   - Norte (Northing) en metros
+   - Datum (WGS84 por defecto)
+3. Click en "💾 Guardar coordenadas"
 
-### Paso 2: Descargar el Proyecto
+### 3. Análisis y Exportación
 
-1. Descarga este proyecto desde GitHub
-2. Extrae el archivo ZIP en una carpeta de tu preferencia
-3. Abre la carpeta del proyecto
+1. Ir a tab "📊 Análisis y Reportes"
+2. Revisar análisis estadísticos
+3. Click en "💾 Generar Excel (Básico + Completo)"
+4. Descargar ambos archivos:
+   - **Básico**: Para importar en FORXIME/2
+   - **Completo**: Con todos los análisis
 
-### Paso 3: Instalar Dependencias
+---
 
-Abre una terminal (PowerShell o CMD) en la carpeta del proyecto y ejecuta:
+## 📄 Formatos de Exportación
 
-```bash
-pip install -r requirements.txt
-```
+### Excel Básico (FORXIME/2)
 
-Este comando instalará todas las bibliotecas necesarias:
+**Columnas:**
 
-- `streamlit` - Framework de la aplicación web
-- `pandas` - Procesamiento de datos
-- `openpyxl` - Generación de archivos Excel
-- `Pillow` - Lectura de metadatos EXIF
+- SITIO
+- CAMARA
+- ESPECIE
+- FECHA (YYYY-MM-DD)
+- HORA (HH:MM:SS)
 
-### Paso 4: Ejecutar la Aplicación
+**Uso:** Importación directa en FORXIME/2 para análisis estadístico avanzado
 
-En la misma terminal, ejecuta:
+### Excel Completo
 
-```bash
-streamlit run app.py
-```
+**Hojas:**
 
-La aplicación se abrirá automáticamente en tu navegador predeterminado en `http://localhost:8501`
+1. **Datos**: Todos los registros con metadatos completos
+2. **Coordenadas**: Ubicación UTM de cada cámara
+3. **Esfuerzo**: Trampas-día por cámara
+4. **Eventos_Independientes**: Análisis de eventos únicos con RAI
+5. **Analisis_Temporal**: Patrones de actividad por especie
+6. **Resumen**: Estadísticas generales del proyecto
 
-## 📖 Guía de Uso
+---
 
-### 1. Preparar tus Datos
+## 🗺️ Zonas UTM en México
 
-Organiza tus fotografías siguiendo la estructura de carpetas requerida:
+### Zonas Comunes
 
-- Carpeta principal con el nombre del proyecto
-- Subcarpetas para cada sitio
-- Subcarpetas para cada cámara (máximo 3 por sitio)
-- Subcarpetas para cada especie o categoría
-- Fotografías dentro de las carpetas de especies
+- **11Q, 11R**: Baja California
+- **12Q, 12R**: Sonora, Sinaloa
+- **13Q, 13R**: Durango, Jalisco, Zacatecas
+- **14Q, 14R**: Coahuila, Nuevo León, Guanajuato
+- **15Q, 15P**: Veracruz, Oaxaca, Chiapas
+- **16Q, 16P**: Yucatán, Quintana Roo, Campeche
 
-### 2. Ejecutar la Aplicación
+### Bandas de Latitud
 
-```bash
-streamlit run app.py
-```
+- **P** (8-16°N): Extremo sur
+- **Q** (16-24°N): Sur y centro - **MÁS COMÚN**
+- **R** (24-32°N): Norte
 
-### 3. Seleccionar Proyecto
+**Ejemplo:** El Salto, Durango = **13Q 462728E 2630653N**
 
-En la interfaz de la aplicación:
+---
 
-1. Ingresa la ruta completa de tu carpeta de proyecto
-   - Ejemplo: `C:\Users\Usuario\Documents\MiProyectoCamaras`
-2. La aplicación validará automáticamente la estructura
+## 🔧 Configuración
 
-### 4. Procesar Datos
+### Parámetros Ajustables
 
-1. Haz clic en el botón **"Procesar Datos y Generar Excel"**
-2. Espera mientras la aplicación:
-   - Recorre todas las carpetas
-   - Lee los metadatos EXIF de cada fotografía
-   - Extrae la fecha y hora de captura
-   - Organiza los datos
+- **Minutos entre eventos independientes**: 5-120 minutos (default: 30)
+- **Zonas UTM válidas**: Configuradas para México
+- **Datum por defecto**: WGS84
+- **Formatos de exportación**: Ambos activados por defecto
 
-### 5. Revisar Resultados
+### Archivo de Configuración
 
-La aplicación mostrará:
+La plataforma genera automáticamente `config.json` con todas las configuraciones.
 
-- **Vista previa** de los datos procesados
-- **Estadísticas** (número de sitios, cámaras, especies)
-- **Ubicación** del archivo Excel generado
+---
 
-### 6. Descargar Excel
+## 🤝 Integración con FORXIME/2
 
-- El archivo Excel se guardará automáticamente en la carpeta del proyecto
-- También puedes descargarlo directamente desde la interfaz
-- El archivo incluirá las columnas: **SITIO**, **CAMARA**, **ESPECIE**, **FECHA**, **HORA**
+Esta plataforma está diseñada para trabajar en conjunto con [FORXIME/2](https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/):
 
-## 📊 Formato del Excel Generado
+1. **Procesar fotos** con esta plataforma
+2. **Exportar Excel básico**
+3. **Importar en FORXIME/2** para:
+   - Índices de diversidad (Shannon, Simpson)
+   - Curvas de rarefacción
+   - Dendrogramas de similitud
+   - Análisis de ocupación
+   - Comparaciones entre sitios
 
-El archivo Excel contendrá las siguientes columnas:
+---
 
-| SITIO | CAMARA | ESPECIE | FECHA | HORA |
-|-------|--------|---------|-------|------|
-| SITIO_1 | CAMARA_1 | Venado | 2024-01-15 | 14:30:25 |
-| SITIO_1 | CAMARA_1 | HUMANO | 2024-01-15 | 16:45:10 |
-| SITIO_2 | CAMARA_1 | VACIO | 2024-01-16 | 08:20:00 |
+## 📊 Base de Datos Local
 
-## ❓ Solución de Problemas
+La plataforma mantiene una base de datos SQLite (`database/projects.db`) con:
 
-### La aplicación no encuentra imágenes
+- Historial de proyectos procesados
+- Coordenadas UTM guardadas por cámara
+- Historial de procesamiento
+- Catálogo de especies por proyecto
 
-- Verifica que la estructura de carpetas sea correcta
-- Asegúrate de que las fotografías tengan extensión `.jpg`, `.jpeg` o `.png`
-- Confirma que las imágenes tengan metadatos EXIF de fecha de captura
+**Ventaja:** Las coordenadas se guardan automáticamente y se reutilizan en futuros procesamientos del mismo proyecto.
 
-### Error al leer metadatos
+---
 
-- Algunas cámaras no guardan metadatos EXIF correctamente
-- Verifica las propiedades de la imagen en tu sistema operativo
-- Busca la propiedad "Fecha de captura" o "Date Taken"
+## 🐛 Solución de Problemas
 
-### La aplicación no inicia
+### GPU no detectada
 
-- Verifica que Python esté instalado correctamente
-- Asegúrate de haber instalado todas las dependencias
-- Ejecuta `pip install -r requirements.txt` nuevamente
+- Verificar drivers NVIDIA actualizados
+- Verificar instalación de CUDA
+- La plataforma funcionará en modo manual automáticamente
 
-### Problemas con la ruta del proyecto
+### Fotos sin metadatos EXIF
 
-- Usa rutas absolutas completas
-- En Windows, usa barras invertidas `\` o dobles barras `/`
-- Ejemplo correcto: `C:\Users\Usuario\Documents\Proyecto`
+- Verificar que las fotos tengan fecha de captura
+- Usar cámaras que graben metadatos EXIF
+- Revisar reporte de calidad de datos
 
-## 🔧 Requisitos del Sistema
+### Error en estructura de carpetas
 
-- **Sistema Operativo:** Windows, macOS, Linux
-- **Python:** 3.8 o superior
-- **RAM:** Mínimo 2 GB
-- **Espacio en Disco:** 100 MB para la aplicación + espacio para tus datos
+- Verificar jerarquía: Proyecto > Sitio > Cámara > Especie > Fotos
+- Máximo 10 cámaras por sitio
+- Solo imágenes (JPG, JPEG, PNG)
 
-## 📄 Licencia
+---
 
-Este proyecto es de código abierto y está disponible para uso académico y científico.
+## 📝 Registro de Cambios
+
+### Versión 2.0 (2026)
+
+- ✨ Sistema de clasificación con IA
+- ✨ Detección automática de GPU CUDA
+- ✨ Modo dual (IA/Manual)
+- ✨ Gestión de coordenadas UTM
+- ✨ Exportación dual de Excel
+- ✨ Base de datos local
+- ✨ Análisis temporal avanzado
+- ✨ Validación de calidad de datos
+- ✨ Interfaz completamente renovada
+
+### Versión 1.0
+
+- Extracción básica de metadatos EXIF
+- Generación de Excel simple
+- Validación de estructura de carpetas
+
+---
 
 ## 👨‍🔬 Autor
 
 **Biólogo Erick Elio Chavez Gurrola**
 
-Para análisis estadístico avanzado, visita [FORXIME/2](https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/)
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo licencia MIT. Ver archivo LICENSE para más detalles.
 
 ---
 
-**Versión:** 1.0  
-**Última actualización:** Enero 2026
+## 🙏 Agradecimientos
+
+- Microsoft CameraTraps (MegaDetector)
+- Comunidad de PyTorch
+- FORXIME/2 platform
+
+---
+
+## 📧 Soporte
+
+Para reportar problemas o sugerencias, crear un issue en el repositorio de GitHub.

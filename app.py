@@ -1,20 +1,44 @@
+"""
+Plataforma Profesional de Análisis de Datos de Cámaras Trampa con IA
+Versión 2.0 - Con clasificación automática y análisis avanzado
+
+Desarrollado por: Biólogo Erick Elio Chavez Gurrola
+"""
+
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-from PIL import Image
-from PIL.ExifTags import TAGS
 from datetime import datetime
-import os
+import time
 
-# Configuración de la página
+# Importar módulos propios
+from logger import get_logger
+from config_manager import get_config
+from database_manager import get_database
+from metadata_extractor import AdvancedMetadataExtractor, UTMCoordinateManager
+from analysis_engine import (
+    TrapEffortCalculator, IndependentEventDetector,
+    TemporalAnalyzer, VisitFrequencyCalculator, GapDetector
+)
+from data_validator import QualityReporter
+from report_generator import export_dual_excel
+from ai_classifier import CUDADetector, get_manual_assistant
+from utils import clean_species_name, standardize_category, get_common_species_mexico
+
+# Inicializar
+logger = get_logger()
+config = get_config()
+db = get_database()
+
+# Configuración de página
 st.set_page_config(
-    page_title="Análisis de Cámaras Trampa",
+    page_title="Plataforma de Cámaras Trampa con IA",
     page_icon="📷",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Estilos CSS personalizados
+# CSS personalizado
 st.markdown("""
     <style>
     .main-title {
@@ -29,20 +53,6 @@ st.markdown("""
         color: #555;
         text-align: center;
         margin-bottom: 2rem;
-    }
-    .developer {
-        font-size: 1rem;
-        color: #1976D2;
-        text-align: center;
-        font-style: italic;
-        margin-bottom: 2rem;
-    }
-    .section-header {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #2E7D32;
-        margin-top: 2rem;
-        margin-bottom: 1rem;
     }
     .info-box {
         background-color: #E8F5E9;
@@ -68,61 +78,216 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-def extract_exif_datetime(image_path):
-    """Extrae la fecha y hora de captura de los metadatos EXIF de una imagen."""
-    try:
-        image = Image.open(image_path)
-        exif_data = image._getexif()
-        
-        if exif_data is not None:
-            for tag_id, value in exif_data.items():
-                tag = TAGS.get(tag_id, tag_id)
-                if tag == "DateTimeOriginal":
-                    # Formato típico: "2024:01:15 14:30:25"
-                    dt = datetime.strptime(value, "%Y:%m:%d %H:%M:%S")
-                    return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M:%S")
-        
-        return None, None
-    except Exception as e:
-        return None, None
+# Inicializar estado de sesión
+if 'processed_data' not in st.session_state:
+    st.session_state.processed_data = None
+if 'project_id' not in st.session_state:
+    st.session_state.project_id = None
+if 'gpu_info' not in st.session_state:
+    # Detectar GPU al inicio
+    gpu_available, gpu_name, cuda_version = CUDADetector.detect_cuda()
+    st.session_state.gpu_info = {
+        'available': gpu_available,
+        'name': gpu_name,
+        'cuda_version': cuda_version
+    }
 
-def validate_folder_structure(project_path):
-    """Valida que la estructura de carpetas sea correcta."""
-    try:
-        # Normalizar la ruta (eliminar espacios, convertir barras)
-        project_path = Path(project_path.strip())
-        
-        if not project_path.exists():
-            return False, f"❌ La carpeta no existe: `{project_path}`\n\n**Sugerencias:**\n- Verifica que el disco externo esté conectado\n- Comprueba la letra de unidad (D:, E:, F:, etc.)\n- Asegúrate de copiar la ruta completa desde el Explorador de Archivos"
-        
-        if not project_path.is_dir():
-            return False, f"❌ La ruta no es una carpeta: `{project_path}`"
-        
-        # Verificar que existan subcarpetas (sitios)
-        sitios = [d for d in project_path.iterdir() if d.is_dir()]
-        if not sitios:
-            return False, f"❌ No se encontraron carpetas de sitios en: `{project_path}`\n\n**La carpeta existe pero está vacía o no tiene la estructura correcta.**\nVerifica que contenga subcarpetas para cada sitio."
-        
-        return True, f"✅ Estructura válida. Se encontraron {len(sitios)} sitio(s)."
-    except PermissionError:
-        return False, f"❌ No tienes permisos para acceder a: `{project_path}`\n\nIntenta ejecutar la aplicación como administrador."
-    except Exception as e:
-        return False, f"❌ Error al validar la ruta: {str(e)}"
+# Título principal
+st.markdown('<p class="main-title">📷 Plataforma Profesional de Análisis de Datos de Cámaras Trampa</p>', unsafe_allow_html=True)
+st.markdown('<p class="subtitle">Con Clasificación Automática mediante IA y Análisis Avanzado</p>', unsafe_allow_html=True)
+st.markdown('<p style="text-align: center; color: #1976D2; font-style: italic;">Desarrollado por: Biólogo Erick Elio Chavez Gurrola</p>', unsafe_allow_html=True)
 
-def process_camera_trap_data(project_path, progress_bar=None, status_text=None):
-    """Procesa todas las imágenes en la estructura de carpetas y genera el DataFrame."""
-    import time
-    project_path = Path(project_path)
-    data = []
+# Barra lateral con información
+with st.sidebar:
+    st.header("⚙️ Configuración")
     
-    # Extensiones de imagen permitidas
+    # Mostrar estado de GPU
+    st.subheader("🎮 Estado del Sistema")
+    if st.session_state.gpu_info['available']:
+        st.success(f"✓ GPU Detectada: {st.session_state.gpu_info['name']}")
+        st.info(f"CUDA: {st.session_state.gpu_info['cuda_version']}")
+        st.caption("Clasificación automática disponible")
+    else:
+        st.warning("⚠️ GPU no detectada")
+        st.caption("Modo asistido manual activado")
+    
+    st.divider()
+    
+    # Configuraciones
+    st.subheader("📋 Parámetros")
+    
+    independent_event_minutes = st.number_input(
+        "Minutos entre eventos independientes",
+        min_value=5,
+        max_value=120,
+        value=config.get_independent_event_minutes(),
+        step=5,
+        help="Tiempo mínimo entre fotos para considerarlas eventos separados"
+    )
+    
+    if independent_event_minutes != config.get_independent_event_minutes():
+        config.set_independent_event_minutes(independent_event_minutes)
+    
+    st.divider()
+    
+    # Enlace a FORXIME/2
+    st.subheader("🔗 FORXIME/2")
+    st.markdown("""
+    Esta plataforma genera Excel compatible con **FORXIME/2** para análisis estadístico avanzado.
+    
+    [Abrir FORXIME/2](https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/)
+    """)
+
+# Tabs principales
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📁 Procesamiento",
+    "📊 Análisis y Reportes",
+    "📍 Coordenadas UTM",
+    "ℹ️ Información"
+])
+
+# TAB 1: PROCESAMIENTO
+with tab1:
+    st.header("📁 Procesamiento de Datos")
+    
+    # Información de estructura
+    with st.expander("📋 Estructura de Carpetas Requerida", expanded=False):
+        st.markdown("""
+        ```
+        PROYECTO/
+        ├── SITIO_1/
+        │   ├── CAMARA_1/
+        │   │   ├── ESPECIE_A/
+        │   │   │   └── fotos.jpg
+        │   │   └── VACIO/
+        │   │       └── fotos.jpg
+        │   └── CAMARA_2/
+        │       └── ...
+        └── SITIO_2/
+            └── ...
+        ```
+        
+        **Reglas:**
+        - Máximo 10 cámaras por sitio
+        - Solo imágenes: JPG, JPEG, PNG
+        - Videos se ignoran automáticamente
+        """)
+    
+    # Selector de proyecto
+    project_path = st.text_input(
+        "📂 Ruta del Proyecto",
+        placeholder="C:\\Users\\Usuario\\Documents\\MiProyecto",
+        help="Ruta completa a la carpeta del proyecto"
+    )
+    
+    if project_path:
+        project_path = project_path.strip().strip('"').strip("'")
+        project_path_obj = Path(project_path)
+        
+        if not project_path_obj.exists():
+            st.error(f"❌ La carpeta no existe: {project_path}")
+        elif not project_path_obj.is_dir():
+            st.error(f"❌ La ruta no es una carpeta válida")
+        else:
+            st.success(f"✓ Carpeta válida: {project_path_obj.name}")
+            
+            # Botón de procesamiento
+            if st.button("🚀 Procesar Proyecto", type="primary", use_container_width=True):
+                process_project(project_path_obj)
+
+# TAB 2: ANÁLISIS Y REPORTES
+with tab2:
+    st.header("📊 Análisis y Reportes")
+    
+    if st.session_state.processed_data is None:
+        st.info("👈 Procesa un proyecto primero en la pestaña 'Procesamiento'")
+    else:
+        show_analysis_and_reports()
+
+# TAB 3: COORDENADAS UTM
+with tab3:
+    st.header("📍 Coordenadas UTM por Cámara")
+    
+    if st.session_state.processed_data is None or st.session_state.project_id is None:
+        st.info("👈 Procesa un proyecto primero")
+    else:
+        show_utm_coordinates_input()
+
+# TAB 4: INFORMACIÓN
+with tab4:
+    st.header("ℹ️ Información de la Plataforma")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("✨ Características")
+        st.markdown("""
+        - ✅ Extracción automática de metadatos EXIF
+        - ✅ Clasificación con IA (si GPU disponible)
+        - ✅ Cálculo de trampas-día
+        - ✅ Detección de eventos independientes
+        - ✅ Análisis temporal (diurno/nocturno)
+        - ✅ Coordenadas UTM con validación
+        - ✅ Exportación dual de Excel
+        - ✅ Compatible con FORXIME/2
+        - ✅ 100% offline (después de setup)
+        """)
+    
+    with col2:
+        st.subheader("📄 Formatos de Exportación")
+        st.markdown("""
+        **Excel Básico (FORXIME/2):**
+        - SITIO, CAMARA, ESPECIE, FECHA, HORA
+        - Listo para importar en FORXIME/2
+        
+        **Excel Completo:**
+        - Todos los datos + análisis
+        - Coordenadas UTM
+        - Esfuerzo de muestreo
+        - Eventos independientes
+        - Análisis temporal
+        - Resumen ejecutivo
+        """)
+    
+    st.divider()
+    
+    st.subheader("🔧 Requisitos del Sistema")
+    st.markdown("""
+    **Mínimos:**
+    - Python 3.8+
+    - 4 GB RAM
+    - 2 GB espacio en disco
+    
+    **Recomendados (para IA):**
+    - GPU NVIDIA RTX 3060+ (6GB VRAM)
+    - CUDA 11.8+
+    - 16 GB RAM
+    - 10 GB espacio (modelos de IA)
+    """)
+
+
+# FUNCIONES AUXILIARES
+
+def process_project(project_path: Path):
+    """Procesa un proyecto completo."""
+    
+    # Crear o obtener proyecto en BD
+    project_name = project_path.name
+    project_id = db.create_project(project_name, str(project_path))
+    st.session_state.project_id = project_id
+    
+    logger.info(f"Procesando proyecto: {project_name}")
+    
+    # Barra de progreso
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    status_text.text("🔍 Escaneando estructura de carpetas...")
+    
+    # Escanear archivos
     image_extensions = {'.jpg', '.jpeg', '.png', '.JPG', '.JPEG', '.PNG'}
-    
-    # FASE 1: Escaneo rápido - solo contar archivos
-    if status_text:
-        status_text.text("🔍 Fase 1/2: Escaneando estructura de carpetas...")
-    
     all_files = []
+    
     for sitio_dir in project_path.iterdir():
         if not sitio_dir.is_dir():
             continue
@@ -134,239 +299,203 @@ def process_camera_trap_data(project_path, progress_bar=None, status_text=None):
                     continue
                 for foto_path in especie_dir.iterdir():
                     if foto_path.is_file() and foto_path.suffix in image_extensions:
-                        all_files.append((foto_path, sitio_dir.name, camara_dir.name, especie_dir.name))
+                        all_files.append({
+                            'path': foto_path,
+                            'sitio': sitio_dir.name,
+                            'camara': camara_dir.name,
+                            'especie': especie_dir.name
+                        })
     
     total_files = len(all_files)
     
     if total_files == 0:
-        if status_text:
-            status_text.text("❌ No se encontraron archivos de imagen")
-        return pd.DataFrame()
+        st.error("❌ No se encontraron imágenes en la estructura de carpetas")
+        return
     
-    if status_text:
-        status_text.text(f"📊 Encontradas {total_files:,} fotos. Iniciando procesamiento...")
+    status_text.text(f"📊 Encontradas {total_files:,} fotos. Procesando...")
     
-    # FASE 2: Procesamiento con progreso
-    processed = 0
-    errors = 0
-    skipped_no_exif = 0
+    # Procesar fotos
+    data = []
     start_time = time.time()
     
-    for foto_path, sitio_nombre, camara_nombre, especie_nombre in all_files:
-        try:
-            fecha, hora = extract_exif_datetime(foto_path)
+    for i, file_info in enumerate(all_files):
+        # Extraer metadatos
+        metadata = AdvancedMetadataExtractor.extract_all_metadata(file_info['path'])
+        
+        if metadata['fecha'] and metadata['hora']:
+            # Limpiar y estandarizar nombres
+            especie_clean = standardize_category(file_info['especie'])
             
-            if fecha and hora:
-                data.append({
-                    'SITIO': sitio_nombre,
-                    'CAMARA': camara_nombre,
-                    'ESPECIE': especie_nombre,
-                    'FECHA': fecha,
-                    'HORA': hora
-                })
-            else:
-                skipped_no_exif += 1
-        except Exception as e:
-            errors += 1
+            data.append({
+                'SITIO': file_info['sitio'],
+                'CAMARA': file_info['camara'],
+                'ESPECIE': especie_clean,
+                'FECHA': metadata['fecha'],
+                'HORA': metadata['hora'],
+                'CAMERA_MODEL': metadata['camera_model'],
+                'TEMPERATURE': metadata['temperature']
+            })
         
-        processed += 1
-        
-        # Actualizar progreso cada 50 fotos (más frecuente para mejor feedback)
-        if progress_bar and processed % 50 == 0:
-            progress = processed / total_files
+        # Actualizar progreso
+        if i % 50 == 0:
+            progress = (i + 1) / total_files
             progress_bar.progress(progress)
-            
-            # Calcular tiempo estimado
-            elapsed = time.time() - start_time
-            if processed > 0:
-                avg_time_per_photo = elapsed / processed
-                remaining = total_files - processed
-                eta_seconds = avg_time_per_photo * remaining
-                eta_minutes = int(eta_seconds / 60)
-                eta_seconds_remainder = int(eta_seconds % 60)
-                
-                if status_text:
-                    status_text.text(
-                        f"⚡ Procesando: {processed:,} / {total_files:,} ({progress*100:.1f}%) | "
-                        f"Válidas: {len(data):,} | "
-                        f"Tiempo restante: ~{eta_minutes}m {eta_seconds_remainder}s"
-                    )
+            status_text.text(f"⚡ Procesando: {i+1:,} / {total_files:,} ({progress*100:.1f}%)")
     
-    # Actualizar al 100%
-    if progress_bar:
-        progress_bar.progress(1.0)
+    progress_bar.progress(1.0)
+    processing_time = time.time() - start_time
     
-    elapsed_total = time.time() - start_time
-    minutes = int(elapsed_total / 60)
-    seconds = int(elapsed_total % 60)
+    # Crear DataFrame
+    df = pd.DataFrame(data)
     
-    if status_text:
-        status_text.text(
-            f"✅ Completado en {minutes}m {seconds}s | "
-            f"Procesadas: {processed:,} | "
-            f"Con metadatos: {len(data):,} | "
-            f"Sin EXIF: {skipped_no_exif:,} | "
-            f"Errores: {errors:,}"
+    if len(df) == 0:
+        st.error("❌ No se encontraron fotos con metadatos EXIF válidos")
+        return
+    
+    status_text.text(f"✅ Procesadas {len(df):,} fotos en {processing_time:.1f} segundos")
+    
+    # Guardar en sesión
+    st.session_state.processed_data = df
+    
+    # Actualizar estadísticas del proyecto
+    db.update_project_stats(project_id, len(df), df['ESPECIE'].nunique())
+    db.add_processing_record(project_id, len(df), processing_time=processing_time)
+    
+    # Mostrar resultados
+    st.success(f"✅ Proyecto procesado exitosamente")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total de Fotos", f"{len(df):,}")
+    with col2:
+        st.metric("Sitios", df['SITIO'].nunique())
+    with col3:
+        st.metric("Especies", df['ESPECIE'].nunique())
+    
+    # Vista previa
+    st.subheader("📋 Vista Previa de Datos")
+    st.dataframe(df.head(20), use_container_width=True)
+    
+    # Reporte de calidad
+    with st.expander("📊 Reporte de Calidad de Datos"):
+        quality_report = QualityReporter.generate_quality_report(df)
+        report_text = QualityReporter.format_quality_report_text(quality_report)
+        st.text(report_text)
+
+
+def show_analysis_and_reports():
+    """Muestra análisis y genera reportes."""
+    df = st.session_state.processed_data
+    
+    st.subheader("📈 Análisis Estadístico")
+    
+    # Calcular análisis
+    with st.spinner("Calculando análisis..."):
+        # Esfuerzo de muestreo
+        effort_df = TrapEffortCalculator.calculate_trap_days(df)
+        
+        # Eventos independientes
+        event_detector = IndependentEventDetector(
+            time_threshold_minutes=config.get_independent_event_minutes()
+        )
+        events_df = event_detector.detect_independent_events(df)
+        rai_df = event_detector.calculate_rai(events_df, effort_df)
+        
+        # Análisis temporal
+        temporal_df = TemporalAnalyzer.analyze_temporal_patterns(df)
+    
+    # Mostrar resultados en tabs
+    analysis_tab1, analysis_tab2, analysis_tab3 = st.tabs([
+        "Esfuerzo de Muestreo",
+        "Eventos Independientes",
+        "Patrones Temporales"
+    ])
+    
+    with analysis_tab1:
+        st.dataframe(effort_df, use_container_width=True)
+        st.metric("Esfuerzo Total", f"{effort_df['TRAMPAS_DIA'].sum()} trampas-día")
+    
+    with analysis_tab2:
+        st.dataframe(events_df, use_container_width=True)
+        st.dataframe(rai_df, use_container_width=True)
+    
+    with analysis_tab3:
+        st.dataframe(temporal_df, use_container_width=True)
+    
+    # Botón de exportación
+    st.divider()
+    st.subheader("📥 Exportar Resultados")
+    
+    if st.button("💾 Generar Excel (Básico + Completo)", type="primary", use_container_width=True):
+        generate_excel_exports(df, effort_df, events_df, temporal_df)
+
+
+def show_utm_coordinates_input():
+    """Muestra interfaz para ingresar coordenadas UTM."""
+    df = st.session_state.processed_data
+    project_id = st.session_state.project_id
+    
+    st.info("Ingresa las coordenadas UTM para cada cámara detectada en el proyecto")
+    
+    # Obtener cámaras únicas
+    cameras = df.groupby(['SITIO', 'CAMARA']).size().reset_index()[['SITIO', 'CAMARA']]
+    
+    for idx, row in cameras.iterrows():
+        with st.expander(f"📍 {row['SITIO']} > {row['CAMARA']}", expanded=False):
+            UTMCoordinateManager.request_camera_coordinates_ui(
+                project_id, row['SITIO'], row['CAMARA']
+            )
+
+
+def generate_excel_exports(df, effort_df, events_df, temporal_df):
+    """Genera archivos Excel de exportación."""
+    project_id = st.session_state.project_id
+    project = db.get_project(st.session_state.processed_data.iloc[0]['SITIO'])
+    
+    # Obtener coordenadas
+    coordinates_data = UTMCoordinateManager.get_all_coordinates_for_export(project_id)
+    coordinates_df = pd.DataFrame(coordinates_data) if coordinates_data else None
+    
+    # Generar Excel
+    with st.spinner("Generando archivos Excel..."):
+        project_path = Path(st.session_state.processed_data.iloc[0]['SITIO']).parent.parent
+        
+        basic_path, complete_path = export_dual_excel(
+            df, project_path, "proyecto",
+            effort_df, events_df, temporal_df, coordinates_df
         )
     
-    return pd.DataFrame(data)
-
-# Título principal
-st.markdown('<p class="main-title">📷 Plataforma Profesional de Análisis de Datos de Cámaras Trampa</p>', unsafe_allow_html=True)
-st.markdown('<p class="developer">Desarrollado por: Biólogo Erick Elio Chavez Gurrola</p>', unsafe_allow_html=True)
-
-# Sección de bienvenida
-st.markdown('<div class="info-box">', unsafe_allow_html=True)
-st.markdown("""
-### 👋 ¡Bienvenido!
-
-Esta plataforma está diseñada para facilitar el análisis de datos de cámaras trampa, extrayendo automáticamente 
-la información de fecha y hora de captura de las fotografías y organizándola en un formato estructurado para su análisis.
-
-**Características principales:**
-- ✅ Extracción automática de metadatos EXIF (fecha de captura)
-- ✅ Generación de reportes en formato Excel
-- ✅ Funcionamiento 100% offline (sin necesidad de internet)
-- ✅ Procesamiento exclusivo de fotografías (videos ignorados)
-""")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Estructura de carpetas requerida
-st.markdown('<p class="section-header">📁 Estructura de Carpetas Requerida</p>', unsafe_allow_html=True)
-st.markdown('<div class="warning-box">', unsafe_allow_html=True)
-st.markdown("""
-Para que la plataforma funcione correctamente, tus carpetas deben seguir esta estructura jerárquica:
-
-```
-NOMBRE_DEL_PROYECTO/
-├── SITIO_1/
-│   ├── CAMARA_1/
-│   │   ├── ESPECIE_A/
-│   │   │   ├── foto001.jpg
-│   │   │   ├── foto002.jpg
-│   │   │   └── ...
-│   │   ├── HUMANO/
-│   │   │   └── foto003.jpg
-│   │   └── VACIO/
-│   │       └── foto004.jpg
-│   ├── CAMARA_2/
-│   │   └── ...
-│   └── CAMARA_3/
-│       └── ...
-└── SITIO_2/
-    └── ...
-```
-
-**Importante:**
-- Cada sitio puede tener hasta **3 cámaras**
-- Las categorías de observación pueden ser: **especies**, **HUMANO**, **VACIO**, **GANADO**, etc.
-- Solo se procesarán archivos de imagen (JPG, JPEG, PNG)
-- Los videos serán ignorados automáticamente
-""")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Selector de carpeta
-st.markdown('<p class="section-header">🔍 Seleccionar Proyecto</p>', unsafe_allow_html=True)
-
-# Input para la ruta del proyecto
-project_path = st.text_input(
-    "Ingresa la ruta completa de la carpeta del proyecto:",
-    placeholder="Ejemplo: C:\\Users\\Usuario\\Documents\\MiProyectoCamaras",
-    help="Pega aquí la ruta completa de la carpeta que contiene tus sitios (sin comillas)"
-)
-
-# Limpiar comillas si el usuario las pegó accidentalmente
-if project_path:
-    project_path = project_path.strip().strip('"').strip("'")
-
-if project_path:
-    # Validar estructura
-    is_valid, message = validate_folder_structure(project_path)
+    st.success("✅ Archivos Excel generados exitosamente")
     
-    if is_valid:
-        st.success(f"✅ {message}")
-        
-        # Botón para procesar
-        if st.button("🚀 Procesar Datos y Generar Excel", type="primary"):
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            status_text.text("🔍 Escaneando carpetas y contando archivos...")
-            
-            df = process_camera_trap_data(project_path, progress_bar, status_text)
-            
-            if len(df) > 0:
-                st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                st.markdown(f"### ✅ Procesamiento Completado")
-                st.markdown(f"Se procesaron **{len(df)} fotografías** exitosamente.")
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Mostrar vista previa
-                st.markdown("### 📊 Vista Previa de los Datos")
-                st.dataframe(df, use_container_width=True)
-                
-                # Estadísticas
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total de Sitios", df['SITIO'].nunique())
-                with col2:
-                    st.metric("Total de Cámaras", df['CAMARA'].nunique())
-                with col3:
-                    st.metric("Total de Especies/Categorías", df['ESPECIE'].nunique())
-                
-                # Generar archivo Excel
-                output_filename = f"datos_camaras_trampa_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                output_path = Path(project_path) / output_filename
-                
-                df.to_excel(output_path, index=False, engine='openpyxl')
-                
-                st.success(f"📁 Archivo Excel generado: `{output_filename}`")
-                st.info(f"📍 Ubicación: `{output_path}`")
-                
-                # Botón de descarga
-                with open(output_path, 'rb') as f:
-                    st.download_button(
-                        label="⬇️ Descargar Excel",
-                        data=f,
-                        file_name=output_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-            else:
-                st.error("❌ No se encontraron imágenes con metadatos EXIF válidos en la estructura de carpetas.")
-                st.warning("Verifica que las imágenes tengan metadatos de fecha de captura y que la estructura de carpetas sea correcta.")
-    else:
-        st.error(f"❌ {message}")
-        st.info("Por favor, verifica que la ruta sea correcta y que la estructura de carpetas siga el formato requerido.")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.info(f"📄 **Excel Básico (FORXIME/2)**\n\n{basic_path.name}")
+        with open(basic_path, 'rb') as f:
+            st.download_button(
+                "⬇️ Descargar Básico",
+                f,
+                file_name=basic_path.name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+    
+    with col2:
+        st.info(f"📄 **Excel Completo**\n\n{complete_path.name}")
+        with open(complete_path, 'rb') as f:
+            st.download_button(
+                "⬇️ Descargar Completo",
+                f,
+                file_name=complete_path.name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
 
-# Sección de análisis estadístico avanzado
-st.markdown("---")
-st.markdown('<p class="section-header">📈 Análisis Estadístico Avanzado</p>', unsafe_allow_html=True)
-st.markdown('<div class="success-box">', unsafe_allow_html=True)
-st.markdown("""
-### 🔗 Complemento FORXIME/2
-
-Esta plataforma es un **complemento perfecto** para **FORXIME/2**, una herramienta especializada en análisis 
-estadístico avanzado de datos de fauna silvestre.
-
-Una vez que hayas generado tu archivo Excel con esta plataforma, puedes importarlo en FORXIME/2 para realizar:
-- 📊 Análisis de diversidad (Shannon, Simpson)
-- 🗺️ Análisis de ocupación
-- 📉 Comparaciones entre sitios
-- 🌳 Dendrogramas de similitud
-- Y mucho más...
-
-**Accede a FORXIME/2 aquí:**  
-🔗 [https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/](https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/)
-
-*Nota: FORXIME/2 requiere conexión a internet. Esta plataforma funciona completamente offline.*
-""")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # Footer
-st.markdown("---")
+st.divider()
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.9rem;'>
-    <p>Plataforma de Análisis de Cámaras Trampa v1.0 | 2026</p>
+    <p>Plataforma de Análisis de Cámaras Trampa v2.0 | 2026</p>
     <p>Desarrollado por: Biólogo Erick Elio Chavez Gurrola</p>
+    <p>Compatible con <a href="https://forxime2-udpq6cmnacvdn4ai9qdj9g.streamlit.app/" target="_blank">FORXIME/2</a></p>
 </div>
 """, unsafe_allow_html=True)
