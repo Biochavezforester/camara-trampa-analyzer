@@ -6,7 +6,7 @@ Genera Excel básico (FORXIME/2) y completo (con trazabilidad IA).
 import pandas as pd
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils.dataframe import dataframe_to_rows
